@@ -2,6 +2,7 @@ pub mod data;
 pub mod storage;
 use clap::{Parser, Subcommand};
 use crate::storage::{Storage, turso::TursoStorage};
+use crate::data::Api;
 
 #[derive(Parser)]
 #[command(name = "mage")]
@@ -17,6 +18,31 @@ enum Commands {
     Schema {
         #[command(subcommand)]
         command: SchemaCommands,
+    },
+    /// Entity data management
+    EntityData {
+        #[command(subcommand)]
+        command: EntityDataCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum EntityDataCommands {
+    /// Put entity data from a JSON blob
+    Put {
+        /// JSON blob containing EntityData
+        blob: String,
+        /// Database file path
+        #[arg(default_value = "mage.db")]
+        file: String,
+    },
+    /// Get entity data by ID
+    Get {
+        /// Entity ID
+        id: String,
+        /// Database file path
+        #[arg(default_value = "mage.db")]
+        file: String,
     },
 }
 
@@ -51,6 +77,29 @@ async fn main() -> anyhow::Result<()> {
                 println!("Opening database at {}...", file);
                 let _storage = TursoStorage::open_database(file).await?;
                 println!("Database successfully opened!");
+            }
+        },
+        Commands::EntityData { command } => match command {
+            EntityDataCommands::Put { blob, file } => {
+                println!("Opening database at {}...", file);
+                let storage = TursoStorage::open_database(file).await?;
+                let api = Api::new(storage);
+                println!("Putting entity data...");
+                api.put_entity_data(blob).await?;
+                println!("Entity data successfully stored!");
+            }
+            EntityDataCommands::Get { id, file } => {
+                println!("Opening database at {}...", file);
+                let storage = TursoStorage::open_database(file).await?;
+                let api = Api::new(storage);
+                match api.get_entity_data(id).await? {
+                    Some(json) => {
+                        println!("{}", serde_json::to_string_pretty(&json)?);
+                    }
+                    None => {
+                        println!("Entity data not found for id: {}", id);
+                    }
+                }
             }
         },
     }
