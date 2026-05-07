@@ -161,11 +161,7 @@ mod tests {
         assert_eq!(all_defs.len(), 1);
 
         // Test insert and get entity data
-        let data = EntityData {
-            id: "usr".create_type_id::<V7>(),
-            entity_definition_id: def.id.clone(),
-            data: json!({"name": "Test User", "age": 30}),
-        };
+        let data = EntityData::new(&def, json!({"name": "Test User", "age": 30}));
         storage.insert_entity_data(&data).await.expect("Failed to insert data");
 
         let retrieved_data = storage.get_entity_data(&data.id).await.expect("Failed to get data").expect("Data not found");
