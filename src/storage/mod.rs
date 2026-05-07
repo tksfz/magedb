@@ -24,9 +24,15 @@ impl fmt::Display for StorageError {
     }
 }
 
+pub mod turso;
+
 pub trait Storage {
     // Note: Rust 1.75+ (and Edition 2024) natively support async fn in traits
     
+    // Database lifecycle
+    async fn create_database(path: &str) -> Result<Self, StorageError> where Self: Sized;
+    async fn open_database(path: &str) -> Result<Self, StorageError> where Self: Sized;
+
     // EntityDefinition operations
     async fn insert_entity_definition(&self, definition: &EntityDefinition) -> Result<(), StorageError>;
     async fn get_entity_definition(&self, id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError>;
