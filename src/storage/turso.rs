@@ -130,3 +130,47 @@ impl Storage for TursoStorage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mti::prelude::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_turso_storage_lifecycle() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let path = db_path.to_str().unwrap();
+
+        // Test create_database
+        let storage = TursoStorage::create_database(path).await.expect("Failed to create database");
+        
+        // Test insert and get entity definition
+        let def = EntityDefinition {
+            id: EntityDefinitionId::new(),
+            type_id_prefix: "usr".to_string(),
+        };
+        storage.insert_entity_definition(&def).await.expect("Failed to insert definition");
+
+        let retrieved_def = storage.get_entity_definition(&def.id).await.expect("Failed to get definition").expect("Definition not found");
+        assert_eq!(def.id.0.to_string(), retrieved_def.id.0.to_string());
+        assert_eq!(def.type_id_prefix, retrieved_def.type_id_prefix);
+
+        let all_defs = storage.get_all_entity_definitions().await.expect("Failed to get all definitions");
+        assert_eq!(all_defs.len(), 1);
+
+        // Test insert and get entity data
+        let data = EntityData {
+            id: "usr".create_type_id::<V7>(),
+            entity_definition_id: def.id.clone(),
+            data: json!({"name": "Test User", "age": 30}),
+        };
+        storage.insert_entity_data(&data).await.expect("Failed to insert data");
+
+        let retrieved_data = storage.get_entity_data(&data.id).await.expect("Failed to get data").expect("Data not found");
+        assert_eq!(data.id.to_string(), retrieved_data.id.to_string());
+        assert_eq!(data.entity_definition_id.0.to_string(), retrieved_data.entity_definition_id.0.to_string());
+        assert_eq!(data.data, retrieved_data.data);
+    }
+}
