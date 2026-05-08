@@ -84,11 +84,13 @@ pub enum SchemaCommands {
     /// Create a new database schema
     Create {
         /// Database file path
+        #[arg(default_value = "mage.db")]
         file: String,
     },
     /// Open an existing database schema
     Open {
         /// Database file path
+        #[arg(default_value = "mage.db")]
         file: String,
     },
 }
