@@ -5,7 +5,7 @@ pub struct EntityDefinitionId(pub MagicTypeId);
 
 impl EntityDefinitionId {
     pub fn new() -> Self {
-        Self("ent".create_type_id::<V7>())
+        Self("mage_entity".create_type_id::<V7>())
     }
 }
 
@@ -25,7 +25,7 @@ mod tests {
     fn test_entity_definition_id_new() {
         let id = EntityDefinitionId::new();
         let id_str = id.0.to_string();
-        assert!(id_str.starts_with("ent_"));
+        assert!(id_str.starts_with("mage_entity_"));
     }
 
 }

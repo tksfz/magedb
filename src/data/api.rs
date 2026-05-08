@@ -18,8 +18,8 @@ impl<S: Storage> Api<S> {
             .ok_or_else(|| anyhow::anyhow!("Missing 'id' field in JSON payload"))?;
         let type_id = id_str.parse::<TypeId>()?;
         
-        // Extract prefix from id_str. Assuming format prefix_...
-        let prefix = id_str.split('_').next().unwrap_or(id_str);
+        // Extract prefix using the built-in prefix method from mti crate
+        let prefix = type_id.prefix();
         
         let entity_definition = self.storage.get_entity_definition_by_prefix(prefix).await?
             .ok_or_else(|| anyhow::anyhow!("Unknown entity type prefix: {}", prefix))?;
@@ -111,7 +111,7 @@ mod tests {
         let api = Api::new(storage.clone());
         
         let type_id = "usr".create_type_id::<V7>();
-        let ent_def_id = EntityDefinitionId("ent".create_type_id::<V7>());
+        let ent_def_id = EntityDefinitionId("mage_entity".create_type_id::<V7>());
         
         storage.insert_entity_definition(&EntityDefinition {
             id: ent_def_id.clone(),
