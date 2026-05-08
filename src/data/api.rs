@@ -1,5 +1,5 @@
 use crate::storage::Storage;
-use crate::data::{EntityData, EntityDefinitionId, TypeId};
+use crate::data::{EntityData, EntityDefinition, EntityDefinitionId, TypeId};
 use serde_json::Value;
 
 pub struct Api<S: Storage> {
@@ -11,6 +11,28 @@ impl<S: Storage> Api<S> {
         Self { storage }
     }
 
+    pub async fn add_entity_definition(&self, blob: &str) -> anyhow::Result<()> {
+        let value: Value = serde_json::from_str(blob)?;
+        
+        let name = value.get("name").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'name' field in JSON payload"))?;
+        
+        let prefix = value.get("prefix").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'prefix' field in JSON payload"))?;
+            
+        let description = value.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+        
+        let definition = EntityDefinition {
+            id: EntityDefinitionId::new(),
+            name: name.to_string(),
+            description,
+            type_id_prefix: prefix.to_string(),
+        };
+        
+        self.storage.insert_entity_definition(&definition).await?;
+        Ok(())
+    }
+
     pub async fn put_entity_data(&self, blob: &str) -> anyhow::Result<()> {
         let value: Value = serde_json::from_str(blob)?;
         
@@ -18,8 +40,8 @@ impl<S: Storage> Api<S> {
             .ok_or_else(|| anyhow::anyhow!("Missing 'id' field in JSON payload"))?;
         let type_id = id_str.parse::<TypeId>()?;
         
-        // Extract prefix from id_str. Assuming format prefix_...
-        let prefix = id_str.split('_').next().unwrap_or(id_str);
+        // Extract prefix using the built-in prefix method from mti crate
+        let prefix = type_id.prefix();
         
         let entity_definition = self.storage.get_entity_definition_by_prefix(prefix).await?
             .ok_or_else(|| anyhow::anyhow!("Unknown entity type prefix: {}", prefix))?;
@@ -106,17 +128,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_add_entity_definition() {
+        let storage = MockStorage::new();
+        let api = Api::new(storage.clone());
+        
+        let payload = r#"{
+            "name": "Product",
+            "description": "An item for sale",
+            "prefix": "prd"
+        }"#;
+        
+        let result = api.add_entity_definition(payload).await;
+        assert!(result.is_ok(), "Failed to add entity definition: {:?}", result.err());
+        
+        // Verify it was saved to storage
+        let def = storage.get_entity_definition_by_prefix("prd").await.unwrap();
+        assert!(def.is_some());
+        let def = def.unwrap();
+        assert_eq!(def.name, "Product");
+        assert_eq!(def.description, Some("An item for sale".to_string()));
+        assert_eq!(def.type_id_prefix, "prd");
+    }
+
+    #[tokio::test]
     async fn test_put_and_get_entity_data() {
         let storage = MockStorage::new();
         let api = Api::new(storage.clone());
         
-        let type_id = "usr".create_type_id::<V7>();
-        let ent_def_id = EntityDefinitionId("ent".create_type_id::<V7>());
+        let def_payload = r#"{
+            "name": "User",
+            "description": "System user",
+            "prefix": "usr"
+        }"#;
         
-        storage.insert_entity_definition(&EntityDefinition {
-            id: ent_def_id.clone(),
-            type_id_prefix: "usr".to_string(),
-        }).await.unwrap();
+        api.add_entity_definition(def_payload).await.unwrap();
+        
+        let type_id = "usr".create_type_id::<V7>();
         
         let payload = format!(r#"{{
             "id": "{}",

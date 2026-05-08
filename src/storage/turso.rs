@@ -12,7 +12,9 @@ impl TursoStorage {
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS entity_definitions (
                 id TEXT PRIMARY KEY,
-                type_id_prefix TEXT NOT NULL
+                type_id_prefix TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT
             )",
             (),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
@@ -52,26 +54,35 @@ impl Storage for TursoStorage {
 
     async fn insert_entity_definition(&self, definition: &EntityDefinition) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO entity_definitions (id, type_id_prefix) VALUES (?1, ?2)",
-            (definition.id.0.to_string(), definition.type_id_prefix.clone()),
+            "INSERT INTO entity_definitions (id, type_id_prefix, name, description) VALUES (?1, ?2, ?3, ?4)",
+            (
+                definition.id.0.to_string(),
+                definition.type_id_prefix.clone(),
+                definition.name.clone(),
+                definition.description.clone(),
+            ),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
         Ok(())
     }
 
     async fn get_entity_definition(&self, id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix FROM entity_definitions WHERE id = ?1",
+            "SELECT id, type_id_prefix, name, description FROM entity_definitions WHERE id = ?1",
             (id.0.to_string(),),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
         if let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
             let id_str: String = row.get(0).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
             Ok(Some(EntityDefinition {
                 id: EntityDefinitionId(magic_id),
+                name,
+                description,
                 type_id_prefix,
             }))
         } else {
@@ -81,18 +92,22 @@ impl Storage for TursoStorage {
 
     async fn get_entity_definition_by_prefix(&self, prefix: &str) -> Result<Option<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix FROM entity_definitions WHERE type_id_prefix = ?1",
+            "SELECT id, type_id_prefix, name, description FROM entity_definitions WHERE type_id_prefix = ?1",
             (prefix.to_string(),),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
         if let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
             let id_str: String = row.get(0).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
             Ok(Some(EntityDefinition {
                 id: EntityDefinitionId(magic_id),
+                name,
+                description,
                 type_id_prefix,
             }))
         } else {
@@ -102,7 +117,7 @@ impl Storage for TursoStorage {
 
     async fn get_all_entity_definitions(&self) -> Result<Vec<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix FROM entity_definitions",
+            "SELECT id, type_id_prefix, name, description FROM entity_definitions",
             (),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
@@ -110,11 +125,15 @@ impl Storage for TursoStorage {
         while let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
             let id_str: String = row.get(0).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
             definitions.push(EntityDefinition {
                 id: EntityDefinitionId(magic_id),
+                name,
+                description,
                 type_id_prefix,
             });
         }
@@ -174,12 +193,16 @@ mod tests {
         // Test insert and get entity definition
         let def = EntityDefinition {
             id: EntityDefinitionId::new(),
+            name: "User".to_string(),
+            description: Some("System user".to_string()),
             type_id_prefix: "usr".to_string(),
         };
         storage.insert_entity_definition(&def).await.expect("Failed to insert definition");
 
         let retrieved_def = storage.get_entity_definition(&def.id).await.expect("Failed to get definition").expect("Definition not found");
         assert_eq!(def.id.0.to_string(), retrieved_def.id.0.to_string());
+        assert_eq!(def.name, retrieved_def.name);
+        assert_eq!(def.description, retrieved_def.description);
         assert_eq!(def.type_id_prefix, retrieved_def.type_id_prefix);
 
         let all_defs = storage.get_all_entity_definitions().await.expect("Failed to get all definitions");
