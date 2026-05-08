@@ -115,6 +115,8 @@ mod tests {
         
         storage.insert_entity_definition(&EntityDefinition {
             id: ent_def_id.clone(),
+            name: "User".to_string(),
+            description: Some("System user".to_string()),
             type_id_prefix: "usr".to_string(),
         }).await.unwrap();
         

@@ -12,6 +12,8 @@ impl EntityDefinitionId {
 #[derive(Debug, Clone)]
 pub struct EntityDefinition {
     pub id: EntityDefinitionId,
+    pub name: String,
+    pub description: Option<String>,
     pub type_id_prefix: String,
 }
 
