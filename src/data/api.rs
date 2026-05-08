@@ -171,4 +171,20 @@ mod tests {
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
+    #[tokio::test]
+    async fn test_put_unrecognized_prefix() {
+        let storage = MockStorage::new();
+        let api = Api::new(storage);
+        
+        let type_id = "unk".create_type_id::<V7>();
+        
+        let payload = format!(r#"{{
+            "id": "{}",
+            "name": "Thom"
+        }}"#, type_id);
+        
+        let result = api.put_entity_data(&payload).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown entity type prefix: unk"));
+    }
 }
