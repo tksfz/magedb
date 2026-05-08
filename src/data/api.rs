@@ -37,14 +37,7 @@ impl<S: Storage> Api<S> {
     pub async fn get_entity_data(&self, id: &str) -> anyhow::Result<Option<Value>> {
         let type_id = id.parse::<TypeId>()?;
         match self.storage.get_entity_data(&type_id).await? {
-            Some(data) => {
-                let json = serde_json::json!({
-                    "id": data.id.to_string(),
-                    "entity_definition_id": data.entity_definition_id.0.to_string(),
-                    "data": data.data
-                });
-                Ok(Some(json))
-            }
+            Some(data) => Ok(Some(data.data)),
             None => Ok(None),
         }
     }
@@ -141,9 +134,8 @@ mod tests {
         
         let json = json_opt.unwrap();
         assert_eq!(json["id"], type_id.to_string());
-        assert_eq!(json["entity_definition_id"], ent_def_id.0.to_string());
-        assert_eq!(json["data"]["name"], "Thom");
-        assert_eq!(json["data"]["level"], 42);
+        assert_eq!(json["name"], "Thom");
+        assert_eq!(json["level"], 42);
     }
     
     #[tokio::test]
