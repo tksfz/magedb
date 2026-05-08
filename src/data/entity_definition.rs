@@ -15,6 +15,7 @@ pub struct EntityDefinition {
     pub name: String,
     pub description: Option<String>,
     pub type_id_prefix: String,
+    pub primary_key_field: String,
 }
 
 #[cfg(test)]

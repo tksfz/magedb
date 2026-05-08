@@ -22,11 +22,17 @@ impl<S: Storage> Api<S> {
             
         let description = value.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
         
+        let primary_key_field = value.get("primary_key_field")
+            .and_then(|v| v.as_str())
+            .unwrap_or("id")
+            .to_string();
+        
         let definition = EntityDefinition {
             id: EntityDefinitionId::new(),
             name: name.to_string(),
             description,
             type_id_prefix: prefix.to_string(),
+            primary_key_field,
         };
         
         self.storage.insert_entity_definition(&definition).await?;
@@ -44,23 +50,27 @@ impl<S: Storage> Api<S> {
                 obj.insert("description".to_string(), Value::String(desc.clone()));
             }
             obj.insert("prefix".to_string(), Value::String(def.type_id_prefix.clone()));
+            obj.insert("primary_key_field".to_string(), Value::String(def.primary_key_field.clone()));
             result.push(Value::Object(obj));
         }
         Ok(result)
     }
 
-    pub async fn put_entity_data(&self, blob: &str) -> anyhow::Result<()> {
+    pub async fn put_entity_data(&self, entity_name: &str, blob: &str) -> anyhow::Result<()> {
         let value: Value = serde_json::from_str(blob)?;
         
-        let id_str = value.get("id").and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'id' field in JSON payload"))?;
+        let entity_definition = self.storage.get_entity_definition_by_name(entity_name).await?
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity definition name: {}", entity_name))?;
+            
+        let id_str = value.get(&entity_definition.primary_key_field).and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing primary key field '{}' in JSON payload", entity_definition.primary_key_field))?;
         let type_id = id_str.parse::<TypeId>()?;
         
-        // Extract prefix using the built-in prefix method from mti crate
+        // Verify prefix matches the definition
         let prefix = type_id.prefix();
-        
-        let entity_definition = self.storage.get_entity_definition_by_prefix(prefix).await?
-            .ok_or_else(|| anyhow::anyhow!("Unknown entity type prefix: {}", prefix))?;
+        if prefix.as_str() != entity_definition.type_id_prefix {
+            return Err(anyhow::anyhow!("ID prefix '{}' does not match entity definition prefix '{}'", prefix, entity_definition.type_id_prefix));
+        }
         
         let data = EntityData {
             id: type_id,
@@ -129,6 +139,11 @@ mod tests {
             Ok(defs.iter().find(|d| d.type_id_prefix == prefix).cloned())
         }
 
+        async fn get_entity_definition_by_name(&self, name: &str) -> Result<Option<EntityDefinition>, StorageError> {
+            let defs = self.definitions.lock().unwrap();
+            Ok(defs.iter().find(|d| d.name.to_lowercase() == name.to_lowercase()).cloned())
+        }
+
         async fn get_all_entity_definitions(&self) -> Result<Vec<EntityDefinition>, StorageError> {
             Ok(self.definitions.lock().unwrap().clone())
         }
@@ -164,6 +179,7 @@ mod tests {
         assert_eq!(def.name, "Product");
         assert_eq!(def.description, Some("An item for sale".to_string()));
         assert_eq!(def.type_id_prefix, "prd");
+        assert_eq!(def.primary_key_field, "id");
     }
 
     #[tokio::test]
@@ -216,7 +232,7 @@ mod tests {
             "level": 42
         }}"#, type_id);
         
-        let result = api.put_entity_data(&payload).await;
+        let result = api.put_entity_data("User", &payload).await;
         assert!(result.is_ok(), "Failed to put entity data: {:?}", result.err());
         
         let result = api.get_entity_data(&type_id.to_string()).await;
@@ -235,13 +251,19 @@ mod tests {
         let storage = MockStorage::new();
         let api = Api::new(storage);
         
+        let def_payload = r#"{
+            "name": "User",
+            "prefix": "usr"
+        }"#;
+        api.add_entity_definition(def_payload).await.unwrap();
+        
         let payload = r#"{
             "name": "Thom"
         }"#;
         
-        let result = api.put_entity_data(payload).await;
+        let result = api.put_entity_data("User", payload).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Missing 'id' field"));
+        assert!(result.unwrap_err().to_string().contains("Missing primary key field 'id'"));
     }
     
     #[tokio::test]
@@ -260,6 +282,12 @@ mod tests {
         let storage = MockStorage::new();
         let api = Api::new(storage);
         
+        let def_payload = r#"{
+            "name": "User",
+            "prefix": "usr"
+        }"#;
+        api.add_entity_definition(def_payload).await.unwrap();
+        
         let type_id = "unk".create_type_id::<V7>();
         
         let payload = format!(r#"{{
@@ -267,8 +295,8 @@ mod tests {
             "name": "Thom"
         }}"#, type_id);
         
-        let result = api.put_entity_data(&payload).await;
+        let result = api.put_entity_data("User", &payload).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown entity type prefix: unk"));
+        assert!(result.unwrap_err().to_string().contains("does not match entity definition prefix 'usr'"));
     }
 }

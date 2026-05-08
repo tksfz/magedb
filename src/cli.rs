@@ -70,6 +70,9 @@ pub enum EntitiesCommands {
 pub enum EntityDataCommands {
     /// Put entity data from a JSON blob
     Put {
+        /// Name of the entity definition
+        #[arg(short, long)]
+        entity: String,
         /// JSON file containing EntityData, or '-' for stdin
         #[arg(default_value = "-")]
         file: String,
@@ -153,7 +156,7 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
             }
         },
         Commands::EntityData { command } => match command {
-            EntityDataCommands::Put { file, dbfile } => {
+            EntityDataCommands::Put { entity, file, dbfile } => {
                 let content = if file == "-" {
                     let mut buf = String::new();
                     std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
@@ -170,7 +173,7 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
                 let storage = TursoStorage::open_database(&db_path).await?;
                 let api = Api::new(storage);
                 println!("Putting entity data...");
-                api.put_entity_data(&content).await?;
+                api.put_entity_data(&entity, &content).await?;
                 println!("Entity data successfully stored!");
             }
             EntityDataCommands::Get { id, dbfile } => {

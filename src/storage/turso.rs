@@ -14,13 +14,19 @@ impl TursoStorage {
                 id TEXT PRIMARY KEY,
                 type_id_prefix TEXT NOT NULL,
                 name TEXT NOT NULL,
-                description TEXT
+                description TEXT,
+                primary_key_field TEXT NOT NULL
             )",
             (),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_entity_definitions_prefix ON entity_definitions(type_id_prefix)",
+            (),
+        ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
+
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_definitions_name ON entity_definitions(LOWER(name))",
             (),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
@@ -54,12 +60,13 @@ impl Storage for TursoStorage {
 
     async fn insert_entity_definition(&self, definition: &EntityDefinition) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO entity_definitions (id, type_id_prefix, name, description) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO entity_definitions (id, type_id_prefix, name, description, primary_key_field) VALUES (?1, ?2, ?3, ?4, ?5)",
             (
                 definition.id.0.to_string(),
                 definition.type_id_prefix.clone(),
                 definition.name.clone(),
                 definition.description.clone(),
+                definition.primary_key_field.clone(),
             ),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
         Ok(())
@@ -67,7 +74,7 @@ impl Storage for TursoStorage {
 
     async fn get_entity_definition(&self, id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix, name, description FROM entity_definitions WHERE id = ?1",
+            "SELECT id, type_id_prefix, name, description, primary_key_field FROM entity_definitions WHERE id = ?1",
             (id.0.to_string(),),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
@@ -76,6 +83,7 @@ impl Storage for TursoStorage {
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let primary_key_field: String = row.get(4).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
@@ -84,6 +92,7 @@ impl Storage for TursoStorage {
                 name,
                 description,
                 type_id_prefix,
+                primary_key_field,
             }))
         } else {
             Ok(None)
@@ -92,7 +101,7 @@ impl Storage for TursoStorage {
 
     async fn get_entity_definition_by_prefix(&self, prefix: &str) -> Result<Option<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix, name, description FROM entity_definitions WHERE type_id_prefix = ?1",
+            "SELECT id, type_id_prefix, name, description, primary_key_field FROM entity_definitions WHERE type_id_prefix = ?1",
             (prefix.to_string(),),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
@@ -101,6 +110,7 @@ impl Storage for TursoStorage {
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let primary_key_field: String = row.get(4).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
@@ -109,6 +119,34 @@ impl Storage for TursoStorage {
                 name,
                 description,
                 type_id_prefix,
+                primary_key_field,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_entity_definition_by_name(&self, name: &str) -> Result<Option<EntityDefinition>, StorageError> {
+        let mut rows = self.conn.query(
+            "SELECT id, type_id_prefix, name, description, primary_key_field FROM entity_definitions WHERE LOWER(name) = LOWER(?1)",
+            (name.to_string(),),
+        ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
+
+        if let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
+            let id_str: String = row.get(0).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let name_from_db: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let primary_key_field: String = row.get(4).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            
+            let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
+            
+            Ok(Some(EntityDefinition {
+                id: EntityDefinitionId(magic_id),
+                name: name_from_db,
+                description,
+                type_id_prefix,
+                primary_key_field,
             }))
         } else {
             Ok(None)
@@ -117,7 +155,7 @@ impl Storage for TursoStorage {
 
     async fn get_all_entity_definitions(&self) -> Result<Vec<EntityDefinition>, StorageError> {
         let mut rows = self.conn.query(
-            "SELECT id, type_id_prefix, name, description FROM entity_definitions",
+            "SELECT id, type_id_prefix, name, description, primary_key_field FROM entity_definitions",
             (),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
@@ -127,6 +165,7 @@ impl Storage for TursoStorage {
             let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let name: String = row.get(2).map_err(|e| StorageError::QueryError(e.to_string()))?;
             let description: Option<String> = row.get(3).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let primary_key_field: String = row.get(4).map_err(|e| StorageError::QueryError(e.to_string()))?;
             
             let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
             
@@ -135,6 +174,7 @@ impl Storage for TursoStorage {
                 name,
                 description,
                 type_id_prefix,
+                primary_key_field,
             });
         }
         Ok(definitions)
@@ -196,6 +236,7 @@ mod tests {
             name: "User".to_string(),
             description: Some("System user".to_string()),
             type_id_prefix: "usr".to_string(),
+            primary_key_field: "id".to_string(),
         };
         storage.insert_entity_definition(&def).await.expect("Failed to insert definition");
 
@@ -204,6 +245,10 @@ mod tests {
         assert_eq!(def.name, retrieved_def.name);
         assert_eq!(def.description, retrieved_def.description);
         assert_eq!(def.type_id_prefix, retrieved_def.type_id_prefix);
+        assert_eq!(def.primary_key_field, retrieved_def.primary_key_field);
+
+        let retrieved_by_name = storage.get_entity_definition_by_name("User").await.expect("Failed to get by name").expect("Not found by name");
+        assert_eq!(def.id.0.to_string(), retrieved_by_name.id.0.to_string());
 
         let all_defs = storage.get_all_entity_definitions().await.expect("Failed to get all definitions");
         assert_eq!(all_defs.len(), 1);
