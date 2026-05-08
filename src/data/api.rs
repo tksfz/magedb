@@ -18,14 +18,15 @@ impl<S: Storage> Api<S> {
             .ok_or_else(|| anyhow::anyhow!("Missing 'id' field in JSON payload"))?;
         let type_id = id_str.parse::<TypeId>()?;
         
-        let entity_def_id_str = value.get("entity_definition_id").and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'entity_definition_id' field in JSON payload"))?;
-        let entity_def_type_id = entity_def_id_str.parse::<mti::prelude::MagicTypeId>()?;
-        let entity_definition_id = EntityDefinitionId(entity_def_type_id);
+        // Extract prefix from id_str. Assuming format prefix_...
+        let prefix = id_str.split('_').next().unwrap_or(id_str);
+        
+        let entity_definition = self.storage.get_entity_definition_by_prefix(prefix).await?
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity type prefix: {}", prefix))?;
         
         let data = EntityData {
             id: type_id,
-            entity_definition_id,
+            entity_definition_id: entity_definition.id,
             data: value,
         };
         
@@ -61,12 +62,14 @@ mod tests {
     #[derive(Clone)]
     struct MockStorage {
         data: Arc<Mutex<HashMap<TypeId, EntityData>>>,
+        definitions: Arc<Mutex<Vec<EntityDefinition>>>,
     }
 
     impl MockStorage {
         fn new() -> Self {
             Self {
                 data: Arc::new(Mutex::new(HashMap::new())),
+                definitions: Arc::new(Mutex::new(Vec::new())),
             }
         }
     }
@@ -80,16 +83,23 @@ mod tests {
             Ok(Self::new())
         }
 
-        async fn insert_entity_definition(&self, _definition: &EntityDefinition) -> Result<(), StorageError> {
+        async fn insert_entity_definition(&self, definition: &EntityDefinition) -> Result<(), StorageError> {
+            self.definitions.lock().unwrap().push(definition.clone());
             Ok(())
         }
 
-        async fn get_entity_definition(&self, _id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError> {
-            Ok(None)
+        async fn get_entity_definition(&self, id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError> {
+            let defs = self.definitions.lock().unwrap();
+            Ok(defs.iter().find(|d| d.id.0 == id.0).cloned())
+        }
+
+        async fn get_entity_definition_by_prefix(&self, prefix: &str) -> Result<Option<EntityDefinition>, StorageError> {
+            let defs = self.definitions.lock().unwrap();
+            Ok(defs.iter().find(|d| d.type_id_prefix == prefix).cloned())
         }
 
         async fn get_all_entity_definitions(&self) -> Result<Vec<EntityDefinition>, StorageError> {
-            Ok(vec![])
+            Ok(self.definitions.lock().unwrap().clone())
         }
 
         async fn insert_entity_data(&self, data: &EntityData) -> Result<(), StorageError> {
@@ -105,17 +115,21 @@ mod tests {
     #[tokio::test]
     async fn test_put_and_get_entity_data() {
         let storage = MockStorage::new();
-        let api = Api::new(storage);
+        let api = Api::new(storage.clone());
         
         let type_id = "usr".create_type_id::<V7>();
-        let ent_def_id = "ent".create_type_id::<V7>();
+        let ent_def_id = EntityDefinitionId("ent".create_type_id::<V7>());
+        
+        storage.insert_entity_definition(&EntityDefinition {
+            id: ent_def_id.clone(),
+            type_id_prefix: "usr".to_string(),
+        }).await.unwrap();
         
         let payload = format!(r#"{{
             "id": "{}",
-            "entity_definition_id": "{}",
             "name": "Thom",
             "level": 42
-        }}"#, type_id, ent_def_id);
+        }}"#, type_id);
         
         let result = api.put_entity_data(&payload).await;
         assert!(result.is_ok(), "Failed to put entity data: {:?}", result.err());
@@ -127,7 +141,7 @@ mod tests {
         
         let json = json_opt.unwrap();
         assert_eq!(json["id"], type_id.to_string());
-        assert_eq!(json["entity_definition_id"], ent_def_id.to_string());
+        assert_eq!(json["entity_definition_id"], ent_def_id.0.to_string());
         assert_eq!(json["data"]["name"], "Thom");
         assert_eq!(json["data"]["level"], 42);
     }
@@ -138,7 +152,6 @@ mod tests {
         let api = Api::new(storage);
         
         let payload = r#"{
-            "entity_definition_id": "ent_123",
             "name": "Thom"
         }"#;
         

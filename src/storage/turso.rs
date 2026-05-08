@@ -18,6 +18,11 @@ impl TursoStorage {
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
         self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entity_definitions_prefix ON entity_definitions(type_id_prefix)",
+            (),
+        ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
+
+        self.conn.execute(
             "CREATE TABLE IF NOT EXISTS entity_data (
                 id TEXT PRIMARY KEY,
                 entity_definition_id TEXT NOT NULL,
@@ -57,6 +62,27 @@ impl Storage for TursoStorage {
         let mut rows = self.conn.query(
             "SELECT id, type_id_prefix FROM entity_definitions WHERE id = ?1",
             (id.0.to_string(),),
+        ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
+
+        if let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
+            let id_str: String = row.get(0).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            let type_id_prefix: String = row.get(1).map_err(|e| StorageError::QueryError(e.to_string()))?;
+            
+            let magic_id = TypeId::from_str(&id_str).map_err(|e| StorageError::SerializationError(e.to_string()))?;
+            
+            Ok(Some(EntityDefinition {
+                id: EntityDefinitionId(magic_id),
+                type_id_prefix,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_entity_definition_by_prefix(&self, prefix: &str) -> Result<Option<EntityDefinition>, StorageError> {
+        let mut rows = self.conn.query(
+            "SELECT id, type_id_prefix FROM entity_definitions WHERE type_id_prefix = ?1",
+            (prefix.to_string(),),
         ).await.map_err(|e| StorageError::QueryError(e.to_string()))?;
 
         if let Some(row) = rows.next().await.map_err(|e| StorageError::QueryError(e.to_string()))? {
@@ -134,7 +160,6 @@ impl Storage for TursoStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mti::prelude::*;
     use serde_json::json;
 
     #[tokio::test]
