@@ -36,6 +36,7 @@ pub trait Storage {
     // EntityDefinition operations
     async fn insert_entity_definition(&self, definition: &EntityDefinition) -> Result<(), StorageError>;
     async fn get_entity_definition(&self, id: &EntityDefinitionId) -> Result<Option<EntityDefinition>, StorageError>;
+    async fn get_entity_definition_by_prefix(&self, prefix: &str) -> Result<Option<EntityDefinition>, StorageError>;
     async fn get_all_entity_definitions(&self) -> Result<Vec<EntityDefinition>, StorageError>;
     
     // EntityData operations
