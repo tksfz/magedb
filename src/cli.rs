@@ -51,8 +51,9 @@ pub enum Commands {
 pub enum EntitiesCommands {
     /// Add a new entity definition from a JSON blob
     Add {
-        /// JSON blob containing Entity Definition (name, prefix, [description])
-        blob: String,
+        /// JSON file containing Entity Definition (name, prefix, [description]), or '-' for stdin
+        #[arg(default_value = "-")]
+        file: String,
         /// Database file path (overrides currently open database)
         #[arg(short, long)]
         dbfile: Option<String>,
@@ -69,8 +70,9 @@ pub enum EntitiesCommands {
 pub enum EntityDataCommands {
     /// Put entity data from a JSON blob
     Put {
-        /// JSON blob containing EntityData
-        blob: String,
+        /// JSON file containing EntityData, or '-' for stdin
+        #[arg(default_value = "-")]
+        file: String,
         /// Database file path (overrides currently open database)
         #[arg(short, long)]
         dbfile: Option<String>,
@@ -118,7 +120,15 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
             }
         },
         Commands::Entities { command } => match command {
-            EntitiesCommands::Add { blob, dbfile } => {
+            EntitiesCommands::Add { file, dbfile } => {
+                let content = if file == "-" {
+                    let mut buf = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
+                    buf
+                } else {
+                    std::fs::read_to_string(&file)?
+                };
+                
                 let db_path = match dbfile {
                     Some(p) => p.clone(),
                     None => load_state()?.db_path,
@@ -127,7 +137,7 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
                 let storage = TursoStorage::open_database(&db_path).await?;
                 let api = Api::new(storage);
                 println!("Adding entity definition...");
-                api.add_entity_definition(blob).await?;
+                api.add_entity_definition(&content).await?;
                 println!("Entity definition successfully added!");
             }
             EntitiesCommands::List { dbfile } => {
@@ -143,7 +153,15 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
             }
         },
         Commands::EntityData { command } => match command {
-            EntityDataCommands::Put { blob, dbfile } => {
+            EntityDataCommands::Put { file, dbfile } => {
+                let content = if file == "-" {
+                    let mut buf = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
+                    buf
+                } else {
+                    std::fs::read_to_string(&file)?
+                };
+                
                 let db_path = match dbfile {
                     Some(p) => p.clone(),
                     None => load_state()?.db_path,
@@ -152,7 +170,7 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
                 let storage = TursoStorage::open_database(&db_path).await?;
                 let api = Api::new(storage);
                 println!("Putting entity data...");
-                api.put_entity_data(blob).await?;
+                api.put_entity_data(&content).await?;
                 println!("Entity data successfully stored!");
             }
             EntityDataCommands::Get { id, dbfile } => {
