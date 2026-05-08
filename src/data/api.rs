@@ -33,6 +33,22 @@ impl<S: Storage> Api<S> {
         Ok(())
     }
 
+    pub async fn list_entity_definitions(&self) -> anyhow::Result<Vec<Value>> {
+        let defs = self.storage.get_all_entity_definitions().await?;
+        let mut result = Vec::new();
+        for def in defs {
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".to_string(), Value::String(def.id.0.to_string()));
+            obj.insert("name".to_string(), Value::String(def.name.clone()));
+            if let Some(desc) = &def.description {
+                obj.insert("description".to_string(), Value::String(desc.clone()));
+            }
+            obj.insert("prefix".to_string(), Value::String(def.type_id_prefix.clone()));
+            result.push(Value::Object(obj));
+        }
+        Ok(result)
+    }
+
     pub async fn put_entity_data(&self, blob: &str) -> anyhow::Result<()> {
         let value: Value = serde_json::from_str(blob)?;
         
@@ -148,6 +164,35 @@ mod tests {
         assert_eq!(def.name, "Product");
         assert_eq!(def.description, Some("An item for sale".to_string()));
         assert_eq!(def.type_id_prefix, "prd");
+    }
+
+    #[tokio::test]
+    async fn test_list_entity_definitions() {
+        let storage = MockStorage::new();
+        let api = Api::new(storage.clone());
+        
+        let def_payload1 = r#"{
+            "name": "Product",
+            "description": "An item for sale",
+            "prefix": "prd"
+        }"#;
+        let def_payload2 = r#"{
+            "name": "User",
+            "prefix": "usr"
+        }"#;
+        
+        api.add_entity_definition(def_payload1).await.unwrap();
+        api.add_entity_definition(def_payload2).await.unwrap();
+        
+        let defs = api.list_entity_definitions().await.unwrap();
+        assert_eq!(defs.len(), 2);
+        
+        let mut prefixes: Vec<String> = defs.iter()
+            .map(|v| v["prefix"].as_str().unwrap().to_string())
+            .collect();
+        prefixes.sort();
+        
+        assert_eq!(prefixes, vec!["prd".to_string(), "usr".to_string()]);
     }
 
     #[tokio::test]

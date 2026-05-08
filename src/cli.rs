@@ -57,6 +57,12 @@ pub enum EntitiesCommands {
         #[arg(short, long)]
         dbfile: Option<String>,
     },
+    /// List all entity definitions
+    List {
+        /// Database file path (overrides currently open database)
+        #[arg(short, long)]
+        dbfile: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -123,6 +129,17 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
                 println!("Adding entity definition...");
                 api.add_entity_definition(blob).await?;
                 println!("Entity definition successfully added!");
+            }
+            EntitiesCommands::List { dbfile } => {
+                let db_path = match dbfile {
+                    Some(p) => p.clone(),
+                    None => load_state()?.db_path,
+                };
+                let storage = TursoStorage::open_database(&db_path).await?;
+                let api = Api::new(storage);
+                let defs = api.list_entity_definitions().await?;
+                let json_arr = serde_json::Value::Array(defs);
+                println!("{}", serde_json::to_string_pretty(&json_arr)?);
             }
         },
         Commands::EntityData { command } => match command {
