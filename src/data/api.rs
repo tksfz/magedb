@@ -155,15 +155,15 @@ mod tests {
         let storage = MockStorage::new();
         let api = Api::new(storage.clone());
         
-        let type_id = "usr".create_type_id::<V7>();
-        let ent_def_id = EntityDefinitionId("mage_entity".create_type_id::<V7>());
+        let def_payload = r#"{
+            "name": "User",
+            "description": "System user",
+            "prefix": "usr"
+        }"#;
         
-        storage.insert_entity_definition(&EntityDefinition {
-            id: ent_def_id.clone(),
-            name: "User".to_string(),
-            description: Some("System user".to_string()),
-            type_id_prefix: "usr".to_string(),
-        }).await.unwrap();
+        api.add_entity_definition(def_payload).await.unwrap();
+        
+        let type_id = "usr".create_type_id::<V7>();
         
         let payload = format!(r#"{{
             "id": "{}",
