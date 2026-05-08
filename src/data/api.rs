@@ -1,5 +1,5 @@
 use crate::storage::Storage;
-use crate::data::{EntityData, EntityDefinitionId, TypeId};
+use crate::data::{EntityData, EntityDefinition, EntityDefinitionId, TypeId};
 use serde_json::Value;
 
 pub struct Api<S: Storage> {
@@ -9,6 +9,28 @@ pub struct Api<S: Storage> {
 impl<S: Storage> Api<S> {
     pub fn new(storage: S) -> Self {
         Self { storage }
+    }
+
+    pub async fn add_entity_definition(&self, blob: &str) -> anyhow::Result<()> {
+        let value: Value = serde_json::from_str(blob)?;
+        
+        let name = value.get("name").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'name' field in JSON payload"))?;
+        
+        let prefix = value.get("prefix").and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing 'prefix' field in JSON payload"))?;
+            
+        let description = value.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+        
+        let definition = EntityDefinition {
+            id: EntityDefinitionId::new(),
+            name: name.to_string(),
+            description,
+            type_id_prefix: prefix.to_string(),
+        };
+        
+        self.storage.insert_entity_definition(&definition).await?;
+        Ok(())
     }
 
     pub async fn put_entity_data(&self, blob: &str) -> anyhow::Result<()> {
@@ -103,6 +125,29 @@ mod tests {
         async fn get_entity_data(&self, id: &TypeId) -> Result<Option<EntityData>, StorageError> {
             Ok(self.data.lock().unwrap().get(id).cloned())
         }
+    }
+
+    #[tokio::test]
+    async fn test_add_entity_definition() {
+        let storage = MockStorage::new();
+        let api = Api::new(storage.clone());
+        
+        let payload = r#"{
+            "name": "Product",
+            "description": "An item for sale",
+            "prefix": "prd"
+        }"#;
+        
+        let result = api.add_entity_definition(payload).await;
+        assert!(result.is_ok(), "Failed to add entity definition: {:?}", result.err());
+        
+        // Verify it was saved to storage
+        let def = storage.get_entity_definition_by_prefix("prd").await.unwrap();
+        assert!(def.is_some());
+        let def = def.unwrap();
+        assert_eq!(def.name, "Product");
+        assert_eq!(def.description, Some("An item for sale".to_string()));
+        assert_eq!(def.type_id_prefix, "prd");
     }
 
     #[tokio::test]

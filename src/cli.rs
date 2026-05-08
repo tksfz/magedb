@@ -35,10 +35,27 @@ pub enum Commands {
         #[command(subcommand)]
         command: SchemaCommands,
     },
+    /// Entity definition management
+    Entities {
+        #[command(subcommand)]
+        command: EntitiesCommands,
+    },
     /// Entity data management
     EntityData {
         #[command(subcommand)]
         command: EntityDataCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum EntitiesCommands {
+    /// Add a new entity definition from a JSON blob
+    Add {
+        /// JSON blob containing Entity Definition (name, prefix, [description])
+        blob: String,
+        /// Database file path (overrides currently open database)
+        #[arg(short, long)]
+        dbfile: Option<String>,
     },
 }
 
@@ -90,6 +107,20 @@ pub async fn execute(cli: Cli) -> anyhow::Result<()> {
                 let _storage = TursoStorage::open_database(file).await?;
                 save_state(file)?;
                 println!("Database successfully opened and set as active!");
+            }
+        },
+        Commands::Entities { command } => match command {
+            EntitiesCommands::Add { blob, dbfile } => {
+                let db_path = match dbfile {
+                    Some(p) => p.clone(),
+                    None => load_state()?.db_path,
+                };
+                println!("Opening database at {}...", db_path);
+                let storage = TursoStorage::open_database(&db_path).await?;
+                let api = Api::new(storage);
+                println!("Adding entity definition...");
+                api.add_entity_definition(blob).await?;
+                println!("Entity definition successfully added!");
             }
         },
         Commands::EntityData { command } => match command {
